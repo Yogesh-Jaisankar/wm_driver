@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import 'RoutePage.dart';
+
 class PickupLocationPage extends StatefulWidget {
   final Map<String, dynamic> pickupLocation;
 
-  const PickupLocationPage({Key? key, required this.pickupLocation})
+  PickupLocationPage({Key? key, required this.pickupLocation})
       : super(key: key);
 
   @override
@@ -16,6 +18,7 @@ class _PickupLocationPageState extends State<PickupLocationPage> {
   late double latitude;
   late double longitude;
   bool isNearPickup = false;
+  bool _isFetchingLocation = false; // To track ongoing operations
 
   @override
   void initState() {
@@ -25,30 +28,42 @@ class _PickupLocationPageState extends State<PickupLocationPage> {
     _checkProximity();
   }
 
+  @override
+  void dispose() {
+    _isFetchingLocation = false; // Stop any ongoing fetch
+    super.dispose();
+  }
+
   Future<void> _checkProximity() async {
     try {
+      _isFetchingLocation = true;
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
+
+      if (!_isFetchingLocation) return; // Ensure the widget is not disposed
+
       double distance = Geolocator.distanceBetween(
         position.latitude,
         position.longitude,
         latitude,
         longitude,
       );
-      if (distance <= 500) {
+
+      if (mounted) {
         setState(() {
-          isNearPickup = true;
+          isNearPickup = distance <= 3000;
         });
       }
     } catch (e) {
-      print("Error getting location: $e");
+      if (mounted) {
+        print("Error getting location: $e");
+      }
     }
   }
 
   Future<void> _showOtpDialog() async {
-    String otp = "";
-
+    if (!mounted) return; // Ensure the widget is still in the widget tree
     await showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -60,9 +75,6 @@ class _PickupLocationPageState extends State<PickupLocationPage> {
             decoration: const InputDecoration(
               hintText: "Enter 4-digit OTP",
             ),
-            onChanged: (value) {
-              otp = value;
-            },
           ),
           actions: [
             TextButton(
@@ -73,16 +85,8 @@ class _PickupLocationPageState extends State<PickupLocationPage> {
             ),
             ElevatedButton(
               onPressed: () {
-                if (otp.length == 4) {
-                  Navigator.of(context).pop(); // Close the dialog
-                  _startRide(otp);
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text("Please enter a valid 4-digit OTP."),
-                    ),
-                  );
-                }
+                Navigator.of(context).pop(); // Close the dialog
+                _startRide(); // Start the ride
               },
               child: const Text("Verify"),
             ),
@@ -92,13 +96,20 @@ class _PickupLocationPageState extends State<PickupLocationPage> {
     );
   }
 
-  void _startRide(String otp) {
-    // Logic for starting the ride with the entered OTP
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Ride started with OTP: $otp")),
+  void _startRide() {
+    if (!mounted) return; // Ensure the widget is still in the widget tree
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => RoutePage(
+          currentLocation: LatLng(
+            widget.pickupLocation['coordinates'][1],
+            widget.pickupLocation['coordinates'][0],
+          ),
+          dropLocation: LatLng(12.8912559, 80.08100089999999), // Example drop
+        ),
+      ),
     );
-    // Navigate or update the UI after starting the ride
-    Navigator.pop(context, "Ride Started");
   }
 
   @override
@@ -135,7 +146,7 @@ class _PickupLocationPageState extends State<PickupLocationPage> {
             child: ElevatedButton(
               onPressed: () {
                 if (isNearPickup) {
-                  _showOtpDialog(); // Show OTP dialog
+                  _showOtpDialog();
                 } else {
                   Navigator.pop(context); // Go back
                 }
